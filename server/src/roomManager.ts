@@ -2,14 +2,16 @@ import {
   RoomState, Player, WebSocketMessage, ServerMessage,
   PhaseType, MarketTier, Ingredient, Batch, BottledWine, Equipment,
   TradeListing, TradeItemType, QualityGrade, WineRoute, FlavorProfile,
-  Guild, GuildApplication, Commission, CommissionStatus
+  Guild, GuildApplication, Commission, CommissionStatus,
+  GuildFundRecord, GuildAnnouncement, BarrelType
 } from './types';
 import { getInitialMarket, createBarrel, BARREL_DATA } from './data';
 import {
   createBatch, advanceBatchStage, bottleBatch, runAuction,
   updateAging, runCompetition, generateRandomEvent,
   calculateTotalAssets, calculateFinalScore, checkBankruptcy,
-  checkMasterVictory, uuidv4
+  checkMasterVictory, uuidv4, getGuildMaxBarrels, getGuildMaxMembers,
+  getExperienceForNextLevel, addGuildExperience, GUILD_MAX_LEVEL
 } from './gameEngine';
 
 const PHASE_DURATION = 30000;
@@ -228,6 +230,7 @@ export class RoomManager {
           requester.inventory.push(bottled);
         }
         commission.status = 'completed';
+        player.totalCommissionsAccepted += 1;
       }
     } else {
       player.inventory.push(bottled);
@@ -521,7 +524,9 @@ export class RoomManager {
         { id: uuidv4(), type: 'fermenter_basic', name: '基础发酵罐', level: 1, effect: '标准发酵能力' }
       ],
       competitionWins: 0,
-      totalAssets: 2000
+      totalAssets: 2000,
+      commissionRatings: [],
+      totalCommissionsAccepted: 0
     };
   }
 
@@ -732,7 +737,12 @@ export class RoomManager {
       memberIds: [playerId],
       barrels: [],
       applications: [],
-      commissions: []
+      commissions: [],
+      level: 1,
+      experience: 0,
+      funds: 0,
+      fundRecords: [],
+      announcements: []
     };
 
     player.coins -= 500;
@@ -754,7 +764,7 @@ export class RoomManager {
 
     const guild = room.guilds.find(g => g.id === guildId);
     if (!guild) return false;
-    if (guild.memberIds.length >= 3) return false;
+    if (guild.memberIds.length >= getGuildMaxMembers(guild.level)) return false;
     if (guild.applications.some(a => a.playerId === playerId && a.status === 'pending')) return false;
 
     guild.applications.push({
@@ -772,7 +782,7 @@ export class RoomManager {
     if (!room) return false;
     const guild = room.guilds.find(g => g.id === guildId);
     if (!guild || guild.leaderId !== playerId) return false;
-    if (guild.memberIds.length >= 3) return false;
+    if (guild.memberIds.length >= getGuildMaxMembers(guild.level)) return false;
 
     const app = guild.applications.find(a => a.playerId === applicantId && a.status === 'pending');
     if (!app) return false;
@@ -843,7 +853,7 @@ export class RoomManager {
 
     const guild = room.guilds.find(g => g.leaderId === playerId);
     if (!guild) return false;
-    if (guild.barrels.length >= 6) return false;
+    if (guild.barrels.length >= getGuildMaxBarrels(guild.level)) return false;
 
     const barrelIdx = player.barrels.findIndex(b => b.id === barrelId);
     if (barrelIdx < 0) return false;
@@ -908,12 +918,21 @@ export class RoomManager {
     return true;
   }
 
+  getPlayerAverageRating(player: Player): number {
+    if (player.commissionRatings.length === 0) return 0;
+    const sum = player.commissionRatings.reduce((a, b) => a + b, 0);
+    return Math.round((sum / player.commissionRatings.length) * 10) / 10;
+  }
+
   acceptCommission(roomId: string, playerId: string, commissionId: string): boolean {
     const room = this.rooms.get(roomId);
     if (!room) return false;
     const brewer = room.players.find(p => p.id === playerId);
     if (!brewer) return false;
     if (room.currentPhase !== 'brewing') return false;
+
+    const avgRating = this.getPlayerAverageRating(brewer);
+    if (brewer.commissionRatings.length > 0 && avgRating < 3) return false;
 
     const guild = room.guilds.find(g => g.commissions.some(c => c.id === commissionId));
     if (!guild) return false;
@@ -971,6 +990,158 @@ export class RoomManager {
     this.returnCommissionIngredients(room, commission);
     commission.status = 'cancelled';
     this.updateAssets(room);
+    this.broadcast(roomId, { type: 'STATE_UPDATED', room });
+    return true;
+  }
+
+  donateFundsToGuild(roomId: string, playerId: string, amount: number): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    const player = room.players.find(p => p.id === playerId);
+    if (!player) return false;
+    if (amount < 100 || player.coins < amount) return false;
+
+    const guild = room.guilds.find(g => g.memberIds.includes(playerId));
+    if (!guild) return false;
+
+    player.coins -= amount;
+    guild.funds += amount;
+
+    const record: GuildFundRecord = {
+      id: `fund_${uuidv4()}`,
+      playerId,
+      playerName: player.name,
+      type: 'donate',
+      amount,
+      description: `${player.name} 捐赠了 ¥${amount}`,
+      timestamp: Date.now()
+    };
+    guild.fundRecords.unshift(record);
+    if (guild.fundRecords.length > 50) guild.fundRecords.pop();
+
+    this.updateAssets(room);
+    this.broadcast(roomId, { type: 'STATE_UPDATED', room });
+    return true;
+  }
+
+  buyGuildBarrel(roomId: string, playerId: string, barrelType: BarrelType): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    const player = room.players.find(p => p.id === playerId);
+    if (!player) return false;
+
+    const guild = room.guilds.find(g => g.leaderId === playerId);
+    if (!guild) return false;
+    if (guild.barrels.length >= getGuildMaxBarrels(guild.level)) return false;
+
+    const cost = BARREL_DATA[barrelType]?.cost;
+    if (!cost || guild.funds < cost) return false;
+
+    guild.funds -= cost;
+    guild.barrels.push(createBarrel(barrelType));
+
+    const record: GuildFundRecord = {
+      id: `fund_${uuidv4()}`,
+      playerId,
+      playerName: player.name,
+      type: 'spend_barrel',
+      amount: cost,
+      description: `购买 ${BARREL_DATA[barrelType].name}`,
+      timestamp: Date.now()
+    };
+    guild.fundRecords.unshift(record);
+    if (guild.fundRecords.length > 50) guild.fundRecords.pop();
+
+    this.updateAssets(room);
+    this.broadcast(roomId, { type: 'STATE_UPDATED', room });
+    return true;
+  }
+
+  speedUpGuildLevel(roomId: string, playerId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    const player = room.players.find(p => p.id === playerId);
+    if (!player) return false;
+
+    const guild = room.guilds.find(g => g.leaderId === playerId);
+    if (!guild) return false;
+    if (guild.level >= GUILD_MAX_LEVEL) return false;
+
+    const expNeeded = getExperienceForNextLevel(guild.level);
+    if (expNeeded <= 0) return false;
+
+    const cost = expNeeded * 10;
+    if (guild.funds < cost) return false;
+
+    guild.funds -= cost;
+    const result = addGuildExperience(guild, expNeeded);
+
+    const record: GuildFundRecord = {
+      id: `fund_${uuidv4()}`,
+      playerId,
+      playerName: player.name,
+      type: 'spend_upgrade',
+      amount: cost,
+      description: `加速升级到 ${result.newLevel} 级`,
+      timestamp: Date.now()
+    };
+    guild.fundRecords.unshift(record);
+    if (guild.fundRecords.length > 50) guild.fundRecords.pop();
+
+    this.updateAssets(room);
+    this.broadcast(roomId, { type: 'STATE_UPDATED', room });
+    return true;
+  }
+
+  rateCommission(roomId: string, playerId: string, commissionId: string, rating: number): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    if (rating < 1 || rating > 5) return false;
+
+    const guild = room.guilds.find(g => g.commissions.some(c => c.id === commissionId));
+    if (!guild) return false;
+
+    const commission = guild.commissions.find(c => c.id === commissionId);
+    if (!commission) return false;
+    if (commission.requesterId !== playerId) return false;
+    if (commission.status !== 'completed') return false;
+    if (commission.ratedByRequester) return false;
+
+    const brewer = room.players.find(p => p.id === commission.brewerId);
+    if (!brewer) return false;
+
+    commission.rating = rating;
+    commission.ratedByRequester = true;
+    brewer.commissionRatings.push(rating);
+
+    this.updateAssets(room);
+    this.broadcast(roomId, { type: 'STATE_UPDATED', room });
+    return true;
+  }
+
+  createGuildAnnouncement(roomId: string, playerId: string, content: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    const player = room.players.find(p => p.id === playerId);
+    if (!player) return false;
+
+    const guild = room.guilds.find(g => g.leaderId === playerId);
+    if (!guild) return false;
+
+    const trimmedContent = content.trim();
+    if (!trimmedContent || trimmedContent.length > 50) return false;
+
+    const announcement: GuildAnnouncement = {
+      id: `ann_${uuidv4()}`,
+      content: trimmedContent,
+      createdBy: playerId,
+      createdByName: player.name,
+      timestamp: Date.now()
+    };
+
+    guild.announcements.unshift(announcement);
+    if (guild.announcements.length > 3) guild.announcements.pop();
+
     this.broadcast(roomId, { type: 'STATE_UPDATED', room });
     return true;
   }

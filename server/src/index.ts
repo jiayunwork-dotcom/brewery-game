@@ -284,6 +284,51 @@ wss.on('connection', (ws) => {
         break;
       }
 
+      case 'DONATE_FUNDS_TO_GUILD': {
+        if (msg.playerId !== clientPlayerId) return;
+        const ok = roomManager.donateFundsToGuild(msg.roomId, msg.playerId, msg.amount);
+        if (!ok) {
+          sendToClient(ws, { type: 'ERROR', message: '捐赠失败：金额不足100或金币不够' });
+        }
+        break;
+      }
+
+      case 'BUY_GUILD_BARREL': {
+        if (msg.playerId !== clientPlayerId) return;
+        const ok = roomManager.buyGuildBarrel(msg.roomId, msg.playerId, msg.barrelType);
+        if (!ok) {
+          sendToClient(ws, { type: 'ERROR', message: '购买失败：仅会长可操作、资金不足或桶库已满' });
+        }
+        break;
+      }
+
+      case 'SPEED_UP_GUILD_LEVEL': {
+        if (msg.playerId !== clientPlayerId) return;
+        const ok = roomManager.speedUpGuildLevel(msg.roomId, msg.playerId);
+        if (!ok) {
+          sendToClient(ws, { type: 'ERROR', message: '加速失败：仅会长可操作、资金不足或已满级' });
+        }
+        break;
+      }
+
+      case 'RATE_COMMISSION': {
+        if (msg.playerId !== clientPlayerId) return;
+        const ok = roomManager.rateCommission(msg.roomId, msg.playerId, msg.commissionId, msg.rating);
+        if (!ok) {
+          sendToClient(ws, { type: 'ERROR', message: '评价失败：仅委托方可评价已完成的委托' });
+        }
+        break;
+      }
+
+      case 'CREATE_GUILD_ANNOUNCEMENT': {
+        if (msg.playerId !== clientPlayerId) return;
+        const ok = roomManager.createGuildAnnouncement(msg.roomId, msg.playerId, msg.content);
+        if (!ok) {
+          sendToClient(ws, { type: 'ERROR', message: '发布失败：仅会长可操作、内容为空或超过50字' });
+        }
+        break;
+      }
+
       default:
         sendToClient(ws, { type: 'ERROR', message: '未知消息类型' });
     }

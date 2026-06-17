@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import type {
   RoomState, Player, MarketTier, ChatMessage,
-  CompetitionResult, TradeItemType, WineRoute
+  CompetitionResult, TradeItemType, WineRoute, BarrelType
 } from '@/types';
 
 const WS_URL = import.meta.env.VITE_WS_URL || `ws://${window.location.hostname}:3000/ws`;
@@ -220,6 +220,31 @@ export const useGameStore = defineStore('game', () => {
     send({ type: 'CANCEL_COMMISSION', roomId: room.value.id, playerId: playerId.value, commissionId });
   }
 
+  function donateFundsToGuild(amount: number) {
+    if (!room.value || !playerId.value) return;
+    send({ type: 'DONATE_FUNDS_TO_GUILD', roomId: room.value.id, playerId: playerId.value, amount });
+  }
+
+  function buyGuildBarrel(barrelType: BarrelType) {
+    if (!room.value || !playerId.value) return;
+    send({ type: 'BUY_GUILD_BARREL', roomId: room.value.id, playerId: playerId.value, barrelType });
+  }
+
+  function speedUpGuildLevel() {
+    if (!room.value || !playerId.value) return;
+    send({ type: 'SPEED_UP_GUILD_LEVEL', roomId: room.value.id, playerId: playerId.value });
+  }
+
+  function rateCommission(commissionId: string, rating: number) {
+    if (!room.value || !playerId.value) return;
+    send({ type: 'RATE_COMMISSION', roomId: room.value.id, playerId: playerId.value, commissionId, rating });
+  }
+
+  function createGuildAnnouncement(content: string) {
+    if (!room.value || !playerId.value) return;
+    send({ type: 'CREATE_GUILD_ANNOUNCEMENT', roomId: room.value.id, playerId: playerId.value, content });
+  }
+
   function requestState() {
     if (!room.value || !playerId.value) return;
     send({ type: 'REQUEST_STATE', roomId: room.value.id, playerId: playerId.value });
@@ -266,6 +291,11 @@ export const useGameStore = defineStore('game', () => {
     createCommission,
     acceptCommission,
     cancelCommission,
+    donateFundsToGuild,
+    buyGuildBarrel,
+    speedUpGuildLevel,
+    rateCommission,
+    createGuildAnnouncement,
     requestState,
     getRoomList
   };

@@ -96,6 +96,8 @@ export interface Player {
   equipment: Equipment[];
   competitionWins: number;
   totalAssets: number;
+  commissionRatings: number[];
+  totalCommissionsAccepted: number;
 }
 
 export type PhaseType = 'market_auction' | 'brewing' | 'aging' | 'sales' | 'competition' | 'events' | 'idle';
@@ -175,6 +177,26 @@ export interface Commission {
   roundsSinceLastProgress: number;
   lastBatchStage: string;
   createdAt: number;
+  rating?: number;
+  ratedByRequester?: boolean;
+}
+
+export interface GuildFundRecord {
+  id: string;
+  playerId: string;
+  playerName: string;
+  type: 'donate' | 'spend_barrel' | 'spend_upgrade';
+  amount: number;
+  description: string;
+  timestamp: number;
+}
+
+export interface GuildAnnouncement {
+  id: string;
+  content: string;
+  createdBy: string;
+  createdByName: string;
+  timestamp: number;
 }
 
 export interface Guild {
@@ -186,6 +208,11 @@ export interface Guild {
   barrels: Barrel[];
   applications: GuildApplication[];
   commissions: Commission[];
+  level: number;
+  experience: number;
+  funds: number;
+  fundRecords: GuildFundRecord[];
+  announcements: GuildAnnouncement[];
 }
 
 export interface TradeListing {

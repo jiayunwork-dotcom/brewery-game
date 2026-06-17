@@ -7,6 +7,57 @@ import { v4 as uuidv4 } from 'uuid';
 
 const FLAVOR_KEYS: (keyof FlavorProfile)[] = ['acidity', 'sweetness', 'bitterness', 'fruitiness', 'floral', 'woody', 'body', 'finish'];
 
+export const GUILD_LEVEL_EXPERIENCE: Record<number, number> = {
+  1: 0,
+  2: 50,
+  3: 100,
+  4: 200,
+  5: 400
+};
+
+export const GUILD_MAX_LEVEL = 5;
+
+export const GUILD_BASE_BARREL_CAPACITY = 6;
+export const GUILD_BASE_MEMBER_CAPACITY = 3;
+
+export function getGuildMaxBarrels(level: number): number {
+  return GUILD_BASE_BARREL_CAPACITY + (level - 1) * 2;
+}
+
+export function getGuildMaxMembers(level: number): number {
+  return GUILD_BASE_MEMBER_CAPACITY + (level - 1) * 1;
+}
+
+export function getExperienceForNextLevel(currentLevel: number): number {
+  return GUILD_LEVEL_EXPERIENCE[currentLevel + 1] || 0;
+}
+
+export function checkGuildLevelUp(guild: Guild): { leveledUp: boolean; newLevel: number } {
+  let leveledUp = false;
+  let currentLevel = guild.level;
+
+  while (currentLevel < GUILD_MAX_LEVEL) {
+    const nextExp = GUILD_LEVEL_EXPERIENCE[currentLevel + 1];
+    if (nextExp && guild.experience >= nextExp) {
+      currentLevel++;
+      leveledUp = true;
+    } else {
+      break;
+    }
+  }
+
+  return { leveledUp, newLevel: currentLevel };
+}
+
+export function addGuildExperience(guild: Guild, exp: number): { leveledUp: boolean; newLevel: number } {
+  guild.experience += exp;
+  const result = checkGuildLevelUp(guild);
+  if (result.leveledUp) {
+    guild.level = result.newLevel;
+  }
+  return result;
+}
+
 function clamp(val: number, min = 0, max = 100): number {
   return Math.max(min, Math.min(max, val));
 }
@@ -435,10 +486,21 @@ export function runCompetition(room: RoomState, entries: { playerId: string; win
     const rank = idx + 1;
     const reputationReward = rank === 1 ? 50 : rank === 2 ? 30 : 15;
     const coinReward = rank === 1 ? 500 : rank === 2 ? 300 : 150;
+    const expReward = rank === 1 ? 30 : rank === 2 ? 20 : 10;
     player.reputation += reputationReward;
     player.coins += coinReward;
     if (rank === 1) player.competitionWins += 1;
-    return { playerId: e.playerId, rank, reputationReward, coinReward };
+
+    if (room.guilds) {
+      for (const guild of room.guilds) {
+        if (guild.memberIds.includes(player.id)) {
+          addGuildExperience(guild, expReward);
+          break;
+        }
+      }
+    }
+
+    return { playerId: e.playerId, rank, reputationReward, coinReward, expReward };
   });
 
   return {

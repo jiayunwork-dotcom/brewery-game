@@ -96,6 +96,8 @@ export interface Player {
   equipment: Equipment[];
   competitionWins: number;
   totalAssets: number;
+  commissionRatings: number[];
+  totalCommissionsAccepted: number;
 }
 
 export type PhaseType = 'market_auction' | 'brewing' | 'aging' | 'sales' | 'competition' | 'events' | 'idle';
@@ -175,6 +177,26 @@ export interface Commission {
   roundsSinceLastProgress: number;
   lastBatchStage: string;
   createdAt: number;
+  rating?: number;
+  ratedByRequester?: boolean;
+}
+
+export interface GuildFundRecord {
+  id: string;
+  playerId: string;
+  playerName: string;
+  type: 'donate' | 'spend_barrel' | 'spend_upgrade';
+  amount: number;
+  description: string;
+  timestamp: number;
+}
+
+export interface GuildAnnouncement {
+  id: string;
+  content: string;
+  createdBy: string;
+  createdByName: string;
+  timestamp: number;
 }
 
 export interface Guild {
@@ -186,6 +208,11 @@ export interface Guild {
   barrels: Barrel[];
   applications: GuildApplication[];
   commissions: Commission[];
+  level: number;
+  experience: number;
+  funds: number;
+  fundRecords: GuildFundRecord[];
+  announcements: GuildAnnouncement[];
 }
 
 export interface TradeListing {
@@ -237,7 +264,12 @@ export type WebSocketMessage =
   | { type: 'DONATE_BARREL_TO_GUILD'; roomId: string; playerId: string; barrelId: string }
   | { type: 'CREATE_COMMISSION'; roomId: string; playerId: string; brewerId: string; ingredients: { ingredientId: string; quantity: number }[]; route: WineRoute; name: string; params: Record<string, number>; quantity: number }
   | { type: 'ACCEPT_COMMISSION'; roomId: string; playerId: string; commissionId: string }
-  | { type: 'CANCEL_COMMISSION'; roomId: string; playerId: string; commissionId: string };
+  | { type: 'CANCEL_COMMISSION'; roomId: string; playerId: string; commissionId: string }
+  | { type: 'DONATE_FUNDS_TO_GUILD'; roomId: string; playerId: string; amount: number }
+  | { type: 'BUY_GUILD_BARREL'; roomId: string; playerId: string; barrelType: BarrelType }
+  | { type: 'SPEED_UP_GUILD_LEVEL'; roomId: string; playerId: string }
+  | { type: 'RATE_COMMISSION'; roomId: string; playerId: string; commissionId: string; rating: number }
+  | { type: 'CREATE_GUILD_ANNOUNCEMENT'; roomId: string; playerId: string; content: string };
 
 export type ServerMessage =
   | { type: 'ROOM_CREATED'; room: RoomState; playerId: string }
