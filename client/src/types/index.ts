@@ -162,6 +162,9 @@ export interface TradeListing {
   unitPrice: number;
   status: 'pending' | 'sold' | 'cancelled';
   createdAt: number;
+  wineFlavor?: FlavorProfile;
+  wineBatchId?: string;
+  wineAgeRounds?: number;
 }
 
 export interface RoomInfo {

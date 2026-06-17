@@ -1,7 +1,7 @@
 import {
   RoomState, Player, WebSocketMessage, ServerMessage,
   PhaseType, MarketTier, Ingredient, Batch, BottledWine, Equipment,
-  TradeListing, TradeItemType, QualityGrade, WineRoute
+  TradeListing, TradeItemType, QualityGrade, WineRoute, FlavorProfile
 } from './types';
 import { getInitialMarket, createBarrel, BARREL_DATA } from './data';
 import {
@@ -480,6 +480,9 @@ export class RoomManager {
     let itemRoute: WineRoute | undefined;
     let itemScore: number | undefined;
     let quality: QualityGrade | undefined;
+    let wineFlavor: FlavorProfile | undefined;
+    let wineBatchId: string | undefined;
+    let wineAgeRounds: number | undefined;
 
     if (itemType === 'ingredient') {
       const pi = player.ingredients.find(x => x.ingredientId === itemId);
@@ -499,6 +502,9 @@ export class RoomManager {
       itemName = wine.name;
       itemRoute = wine.route;
       itemScore = wine.score;
+      wineFlavor = { ...wine.flavor };
+      wineBatchId = wine.batchId;
+      wineAgeRounds = wine.ageRounds;
     } else {
       return false;
     }
@@ -516,7 +522,10 @@ export class RoomManager {
       quantity,
       unitPrice,
       status: 'pending',
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      wineFlavor,
+      wineBatchId,
+      wineAgeRounds
     };
 
     room.tradeListings.push(listing);
@@ -546,16 +555,17 @@ export class RoomManager {
       if (existing) {
         existing.quantity += listing.quantity;
       } else {
-        const mi = room.market.find(m => m.id === listing.itemId);
         player.inventory.push({
           id: listing.itemId,
-          batchId: '',
+          batchId: listing.wineBatchId || '',
           route: listing.itemRoute || 'wine',
           name: listing.itemName,
-          flavor: { acidity: 0, sweetness: 0, bitterness: 0, fruitiness: 0, floral: 0, woody: 0, body: 0, finish: 0 },
+          flavor: listing.wineFlavor
+            ? { ...listing.wineFlavor }
+            : { acidity: 0, sweetness: 0, bitterness: 0, fruitiness: 0, floral: 0, woody: 0, body: 0, finish: 0 },
           score: listing.itemScore || 0,
           quantity: listing.quantity,
-          ageRounds: 0
+          ageRounds: listing.wineAgeRounds || 0
         });
       }
     }
@@ -595,24 +605,18 @@ export class RoomManager {
       if (existing) {
         existing.quantity += listing.quantity;
       } else {
-        const sellerWine = seller.inventory.find(w => w.id === listing.itemId);
-        if (sellerWine) {
-          buyer.inventory.push({
-            ...sellerWine,
-            quantity: listing.quantity
-          });
-        } else {
-          buyer.inventory.push({
-            id: listing.itemId,
-            batchId: '',
-            route: listing.itemRoute || 'wine',
-            name: listing.itemName,
-            flavor: { acidity: 0, sweetness: 0, bitterness: 0, fruitiness: 0, floral: 0, woody: 0, body: 0, finish: 0 },
-            score: listing.itemScore || 0,
-            quantity: listing.quantity,
-            ageRounds: 0
-          });
-        }
+        buyer.inventory.push({
+          id: listing.itemId,
+          batchId: listing.wineBatchId || '',
+          route: listing.itemRoute || 'wine',
+          name: listing.itemName,
+          flavor: listing.wineFlavor
+            ? { ...listing.wineFlavor }
+            : { acidity: 0, sweetness: 0, bitterness: 0, fruitiness: 0, floral: 0, woody: 0, body: 0, finish: 0 },
+          score: listing.itemScore || 0,
+          quantity: listing.quantity,
+          ageRounds: listing.wineAgeRounds || 0
+        });
       }
     }
 
@@ -622,7 +626,7 @@ export class RoomManager {
       id: uuidv4(),
       round: room.currentRound,
       type: 'trade' as const,
-      message: `[交易] 你卖出「${listing.itemName}」x${listing.quantity}，获得 ¥${totalCost}`,
+      message: `[交易] ${seller.name} 卖出「${listing.itemName}」x${listing.quantity}，获得 ¥${totalCost}`,
       affectedPlayerIds: [seller.id],
       effect: { coins: totalCost }
     };
@@ -632,7 +636,7 @@ export class RoomManager {
       id: uuidv4(),
       round: room.currentRound,
       type: 'trade' as const,
-      message: `[交易] 你从 ${seller.name} 购买「${listing.itemName}」x${listing.quantity}，花费 ¥${totalCost}`,
+      message: `[交易] ${buyer.name} 从 ${seller.name} 购入「${listing.itemName}」x${listing.quantity}，花费 ¥${totalCost}`,
       affectedPlayerIds: [buyer.id],
       effect: { coins: -totalCost }
     };
