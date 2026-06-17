@@ -3,6 +3,7 @@ FROM node:20-alpine AS build
 WORKDIR /app
 
 COPY package*.json ./
+COPY .npmrc ./
 RUN npm install
 
 COPY tsconfig.json ./
@@ -16,6 +17,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 COPY package*.json ./
+COPY .npmrc ./
 RUN npm install --only=production
 
 COPY --from=build /app/dist ./dist

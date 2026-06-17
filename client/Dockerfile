@@ -3,12 +3,12 @@ FROM node:20-alpine AS build
 WORKDIR /app
 
 COPY package*.json ./
+COPY .npmrc ./
 RUN npm install
 
 COPY tsconfig.json tsconfig.node.json vite.config.ts ./
 COPY index.html ./
 COPY src ./src
-COPY public ./public 2>/dev/null || true
 
 RUN npm run build
 
