@@ -10,15 +10,16 @@
         当前阶段: {{ stageLabel(batch.currentStage) }}
       </div>
 
-      <div v-if="barrels.length === 0" class="text-center p-6 rounded"
+      <div v-if="allBarrels.length === 0" class="text-center p-6 rounded"
            style="background: rgba(0,0,0,0.3); color: #999;">
         你还没有可用的橡木桶
         <br />先去设备商店购买吧！
       </div>
 
       <div v-else class="space-y-2 max-h-80 overflow-y-auto">
+        <div v-if="personalBarrels.length > 0" class="text-xs font-bold mb-1" style="color: #c9b896;">个人桶库</div>
         <div
-          v-for="b in availableBarrels"
+          v-for="b in personalBarrels"
           :key="b.id"
           class="barrel-item p-3 rounded cursor-pointer transition-all"
           style="background: rgba(26, 15, 10, 0.6); border: 1px solid #5a3a24;"
@@ -45,6 +46,33 @@
             ⚠️ 已达最大使用次数
           </div>
         </div>
+
+        <div v-if="guildBarrels.length > 0" class="text-xs font-bold mb-1 mt-2" style="color: #f39c12;">🏰 协会共享桶</div>
+        <div
+          v-for="b in guildBarrels"
+          :key="b.id"
+          class="barrel-item p-3 rounded cursor-pointer transition-all"
+          style="background: rgba(26, 15, 10, 0.6); border: 1px solid #8b4513;"
+          :class="{ 'barrel-selected': selected === b.id, 'opacity-50': b.usedTimes >= b.maxUses }"
+          @click="b.usedTimes < b.maxUses && (selected = b.id)"
+        >
+          <div class="flex justify-between items-center mb-1">
+            <span class="font-medium text-sm" style="color: #d4a574;">🏰 {{ barrelName(b.type) }}</span>
+            <span class="text-xs" :style="{ color: b.usedTimes < b.maxUses ? '#c9b896' : '#e74c3c' }">
+              寿命: {{ b.maxUses - b.usedTimes }}/{{ b.maxUses }}
+            </span>
+          </div>
+          <div class="text-xs mt-1 flex flex-wrap gap-1">
+            <span
+              v-for="(val, key) in b.flavorModifier"
+              :key="key"
+              class="flavor-tag text-xs px-1 rounded"
+              style="background: rgba(139, 69, 19, 0.3); color: #c9b896;"
+            >
+              {{ flavorLabel(key as string) }}:+{{ val }}
+            </span>
+          </div>
+        </div>
       </div>
 
       <div class="flex gap-3 justify-end mt-4">
@@ -67,6 +95,7 @@ import { BARREL_NAMES, STAGE_NAMES, FLAVOR_LABELS } from '@/types';
 const props = defineProps<{
   batch: Batch;
   barrels: Barrel[];
+  guildBarrelsList?: Barrel[];
 }>();
 
 const emit = defineEmits<{
@@ -76,8 +105,16 @@ const emit = defineEmits<{
 
 const selected = ref<string | null>(null);
 
-const availableBarrels = computed(() => {
-  return props.barrels.filter(b => !b.id || b.id);
+const personalBarrels = computed(() => {
+  return props.barrels.filter(b => b.usedTimes < b.maxUses);
+});
+
+const guildBarrels = computed(() => {
+  return (props.guildBarrelsList || []).filter(b => b.usedTimes < b.maxUses);
+});
+
+const allBarrels = computed(() => {
+  return [...personalBarrels.value, ...guildBarrels.value];
 });
 
 function stageLabel(stage: string) {

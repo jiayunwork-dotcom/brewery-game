@@ -1,7 +1,8 @@
 import {
   RoomState, Player, WebSocketMessage, ServerMessage,
   PhaseType, MarketTier, Ingredient, Batch, BottledWine, Equipment,
-  TradeListing, TradeItemType, QualityGrade, WineRoute, FlavorProfile
+  TradeListing, TradeItemType, QualityGrade, WineRoute, FlavorProfile,
+  Guild, GuildApplication, Commission, CommissionStatus
 } from './types';
 import { getInitialMarket, createBarrel, BARREL_DATA } from './data';
 import {
@@ -50,7 +51,8 @@ export class RoomManager {
       gameEnded: false,
       chatMessages: [],
       tradeListings: [],
-      competitionWineIds: []
+      competitionWineIds: [],
+      guilds: []
     };
 
     this.rooms.set(roomId, room);
@@ -72,6 +74,7 @@ export class RoomManager {
   leaveRoom(roomId: string, playerId: string) {
     const room = this.rooms.get(roomId);
     if (!room) return;
+    this.handlePlayerLeaveGuild(room, playerId);
     room.players = room.players.filter(p => p.id !== playerId);
     if (room.players.length === 0) {
       this.rooms.delete(roomId);
@@ -181,6 +184,7 @@ export class RoomManager {
 
   private handleBottleBatch(player: Player, data: Record<string, any>) {
     const { batchId } = data;
+    const room = this.rooms.get(player.roomId);
     const idx = player.batches.findIndex(b => b.id === batchId);
     if (idx < 0) return;
     const batch = player.batches[idx];
@@ -192,12 +196,43 @@ export class RoomManager {
     if (!isReady) return;
 
     if (batch.barrelId) {
-      const barrel = player.barrels.find(b => b.id === batch.barrelId);
-      if (barrel) barrel.usedTimes += 1;
+      let barrel = player.barrels.find(b => b.id === batch.barrelId);
+      if (!barrel && room) {
+        for (const guild of room.guilds) {
+          barrel = guild.barrels.find(b => b.id === batch.barrelId);
+          if (barrel) {
+            barrel.usedTimes += 1;
+            if (barrel.usedTimes >= barrel.maxUses) {
+              guild.barrels = guild.barrels.filter(b => b.id !== batch.barrelId);
+            }
+            break;
+          }
+        }
+      } else if (barrel) {
+        barrel.usedTimes += 1;
+      }
     }
 
     const bottled = bottleBatch(batch);
-    player.inventory.push(bottled);
+
+    if (batch.commissionId && room) {
+      let commission: Commission | undefined;
+      let ownerGuild: Guild | undefined;
+      for (const guild of room.guilds) {
+        const c = guild.commissions.find(c => c.id === batch.commissionId);
+        if (c) { commission = c; ownerGuild = guild; break; }
+      }
+      if (commission) {
+        const requester = room.players.find(p => p.id === commission.requesterId);
+        if (requester) {
+          requester.inventory.push(bottled);
+        }
+        commission.status = 'completed';
+      }
+    } else {
+      player.inventory.push(bottled);
+    }
+
     player.batches.splice(idx, 1);
   }
 
@@ -240,9 +275,32 @@ export class RoomManager {
   private handleAssignBarrel(player: Player, data: Record<string, any>) {
     const { batchId, barrelId } = data;
     const batch = player.batches.find(b => b.id === batchId);
-    const barrel = player.barrels.find(b => b.id === barrelId);
-    if (!batch || !barrel) return;
-    if (barrel.usedTimes >= barrel.maxUses) return;
+    if (!batch) return;
+
+    let barrel = player.barrels.find(b => b.id === barrelId);
+    if (!barrel) {
+      const room = this.rooms.get(player.roomId);
+      if (room) {
+        for (const guild of room.guilds) {
+          if (!guild.memberIds.includes(player.id)) continue;
+          barrel = guild.barrels.find(b => b.id === barrelId);
+          if (barrel) break;
+        }
+      }
+    }
+    if (!barrel || barrel.usedTimes >= barrel.maxUses) return;
+
+    if (barrelId !== batch.barrelId) {
+      const room = this.rooms.get(player.roomId);
+      if (room) {
+        for (const p of room.players) {
+          for (const b of p.batches) {
+            if (b.barrelId === barrelId && b.id !== batchId) return;
+          }
+        }
+      }
+    }
+
     batch.barrelId = barrelId;
   }
 
@@ -391,6 +449,8 @@ export class RoomManager {
   private endRound(room: RoomState) {
     room.currentRound += 1;
     room.marketTrend = {};
+
+    this.processCommissionTimeouts(room);
 
     room.players.forEach(p => {
       p.totalAssets = calculateTotalAssets(p);
@@ -649,6 +709,389 @@ export class RoomManager {
 
   getRoom(roomId: string): RoomState | undefined {
     return this.rooms.get(roomId);
+  }
+
+  createGuild(roomId: string, playerId: string, name: string, motto: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    const player = room.players.find(p => p.id === playerId);
+    if (!player) return false;
+    if (player.coins < 500) return false;
+
+    for (const g of room.guilds) {
+      if (g.memberIds.includes(playerId)) return false;
+    }
+
+    if (!name || name.trim().length === 0 || name.trim().length > 20) return false;
+
+    const guild: Guild = {
+      id: `guild_${uuidv4()}`,
+      name: name.trim(),
+      motto: motto.trim() || '干杯！',
+      leaderId: playerId,
+      memberIds: [playerId],
+      barrels: [],
+      applications: [],
+      commissions: []
+    };
+
+    player.coins -= 500;
+    room.guilds.push(guild);
+    this.updateAssets(room);
+    this.broadcast(roomId, { type: 'STATE_UPDATED', room });
+    return true;
+  }
+
+  applyToGuild(roomId: string, playerId: string, guildId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    const player = room.players.find(p => p.id === playerId);
+    if (!player) return false;
+
+    for (const g of room.guilds) {
+      if (g.memberIds.includes(playerId)) return false;
+    }
+
+    const guild = room.guilds.find(g => g.id === guildId);
+    if (!guild) return false;
+    if (guild.memberIds.length >= 3) return false;
+    if (guild.applications.some(a => a.playerId === playerId && a.status === 'pending')) return false;
+
+    guild.applications.push({
+      playerId,
+      playerName: player.name,
+      status: 'pending',
+      createdAt: Date.now()
+    });
+    this.broadcast(roomId, { type: 'STATE_UPDATED', room });
+    return true;
+  }
+
+  approveGuildApplication(roomId: string, playerId: string, guildId: string, applicantId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    const guild = room.guilds.find(g => g.id === guildId);
+    if (!guild || guild.leaderId !== playerId) return false;
+    if (guild.memberIds.length >= 3) return false;
+
+    const app = guild.applications.find(a => a.playerId === applicantId && a.status === 'pending');
+    if (!app) return false;
+
+    for (const g of room.guilds) {
+      if (g.memberIds.includes(applicantId)) {
+        app.status = 'rejected';
+        this.broadcast(roomId, { type: 'STATE_UPDATED', room });
+        return false;
+      }
+    }
+
+    app.status = 'approved';
+    guild.memberIds.push(applicantId);
+    this.updateAssets(room);
+    this.broadcast(roomId, { type: 'STATE_UPDATED', room });
+    return true;
+  }
+
+  kickGuildMember(roomId: string, playerId: string, memberId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    const guild = room.guilds.find(g => g.leaderId === playerId);
+    if (!guild) return false;
+    if (memberId === playerId) return false;
+    if (!guild.memberIds.includes(memberId)) return false;
+
+    guild.memberIds = guild.memberIds.filter(id => id !== memberId);
+    this.cleanupCommissionsForPlayer(room, guild, memberId);
+    this.cleanupGuildBarrelAssignments(room, guild, memberId);
+    this.updateAssets(room);
+    this.broadcast(roomId, { type: 'STATE_UPDATED', room });
+    return true;
+  }
+
+  leaveGuild(roomId: string, playerId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    const guild = room.guilds.find(g => g.memberIds.includes(playerId));
+    if (!guild) return false;
+
+    if (guild.leaderId === playerId) {
+      if (guild.memberIds.length === 1) {
+        this.cancelAllCommissions(room, guild);
+        room.guilds = room.guilds.filter(g => g.id !== guild.id);
+      } else {
+        guild.memberIds = guild.memberIds.filter(id => id !== playerId);
+        guild.leaderId = guild.memberIds[0];
+        this.cleanupCommissionsForPlayer(room, guild, playerId);
+        this.cleanupGuildBarrelAssignments(room, guild, playerId);
+      }
+    } else {
+      guild.memberIds = guild.memberIds.filter(id => id !== playerId);
+      this.cleanupCommissionsForPlayer(room, guild, playerId);
+      this.cleanupGuildBarrelAssignments(room, guild, playerId);
+    }
+
+    this.updateAssets(room);
+    this.broadcast(roomId, { type: 'STATE_UPDATED', room });
+    return true;
+  }
+
+  donateBarrelToGuild(roomId: string, playerId: string, barrelId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    const player = room.players.find(p => p.id === playerId);
+    if (!player) return false;
+
+    const guild = room.guilds.find(g => g.leaderId === playerId);
+    if (!guild) return false;
+    if (guild.barrels.length >= 6) return false;
+
+    const barrelIdx = player.barrels.findIndex(b => b.id === barrelId);
+    if (barrelIdx < 0) return false;
+
+    const barrel = player.barrels[barrelIdx];
+    for (const p of room.players) {
+      for (const batch of p.batches) {
+        if (batch.barrelId === barrelId) return false;
+      }
+    }
+
+    player.barrels.splice(barrelIdx, 1);
+    guild.barrels.push(barrel);
+    this.updateAssets(room);
+    this.broadcast(roomId, { type: 'STATE_UPDATED', room });
+    return true;
+  }
+
+  createCommission(roomId: string, playerId: string, brewerId: string, ingredients: { ingredientId: string; quantity: number }[], route: WineRoute, name: string, params: Record<string, number>, quantity: number): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    const requester = room.players.find(p => p.id === playerId);
+    if (!requester) return false;
+
+    const guild = room.guilds.find(g => g.memberIds.includes(playerId) && g.memberIds.includes(brewerId));
+    if (!guild) return false;
+
+    if (guild.commissions.filter(c => c.status === 'pending' || c.status === 'accepted').length >= 10) return false;
+
+    for (const ing of ingredients) {
+      const pi = requester.ingredients.find(x => x.ingredientId === ing.ingredientId);
+      if (!pi || pi.quantity < ing.quantity) return false;
+    }
+
+    for (const ing of ingredients) {
+      const pi = requester.ingredients.find(x => x.ingredientId === ing.ingredientId);
+      if (pi) pi.quantity -= ing.quantity;
+    }
+    requester.ingredients = requester.ingredients.filter(x => x.quantity > 0);
+
+    const brewer = room.players.find(p => p.id === brewerId);
+    const commission: Commission = {
+      id: `comm_${uuidv4()}`,
+      requesterId: playerId,
+      requesterName: requester.name,
+      brewerId,
+      brewerName: brewer?.name || '未知',
+      ingredients,
+      route,
+      name: name || '委托酿造',
+      params,
+      quantity: quantity || 50,
+      status: 'pending',
+      roundsSinceLastProgress: 0,
+      lastBatchStage: '',
+      createdAt: Date.now()
+    };
+
+    guild.commissions.push(commission);
+    this.updateAssets(room);
+    this.broadcast(roomId, { type: 'STATE_UPDATED', room });
+    return true;
+  }
+
+  acceptCommission(roomId: string, playerId: string, commissionId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    const brewer = room.players.find(p => p.id === playerId);
+    if (!brewer) return false;
+    if (room.currentPhase !== 'brewing') return false;
+
+    const guild = room.guilds.find(g => g.commissions.some(c => c.id === commissionId));
+    if (!guild) return false;
+    const commission = guild.commissions.find(c => c.id === commissionId);
+    if (!commission || commission.brewerId !== playerId || commission.status !== 'pending') return false;
+
+    const ingredientObjs: Ingredient[] = [];
+    commission.ingredients.forEach(ci => {
+      const mi = room.market.find(m => m.id === ci.ingredientId);
+      if (mi) {
+        ingredientObjs.push({ ...mi, purchased: ci.quantity });
+      }
+    });
+
+    if (ingredientObjs.length === 0) {
+      this.returnCommissionIngredients(room, commission);
+      commission.status = 'cancelled';
+      this.broadcast(roomId, { type: 'STATE_UPDATED', room });
+      return false;
+    }
+
+    const batch = createBatch(playerId, commission.route, commission.name, ingredientObjs, commission.params, commission.quantity);
+    batch.commissionId = commissionId;
+    commission.batchId = batch.id;
+    commission.status = 'accepted';
+    commission.lastBatchStage = batch.currentStage;
+    brewer.batches.push(batch);
+
+    this.updateAssets(room);
+    this.broadcast(roomId, { type: 'STATE_UPDATED', room });
+    return true;
+  }
+
+  cancelCommission(roomId: string, playerId: string, commissionId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+
+    const guild = room.guilds.find(g => g.commissions.some(c => c.id === commissionId));
+    if (!guild) return false;
+    const commission = guild.commissions.find(c => c.id === commissionId);
+    if (!commission) return false;
+    if (commission.requesterId !== playerId) return false;
+    if (commission.status !== 'pending' && commission.status !== 'accepted') return false;
+
+    if (commission.status === 'accepted' && commission.batchId) {
+      for (const p of room.players) {
+        const bIdx = p.batches.findIndex(b => b.id === commission.batchId);
+        if (bIdx >= 0) {
+          p.batches.splice(bIdx, 1);
+          break;
+        }
+      }
+    }
+
+    this.returnCommissionIngredients(room, commission);
+    commission.status = 'cancelled';
+    this.updateAssets(room);
+    this.broadcast(roomId, { type: 'STATE_UPDATED', room });
+    return true;
+  }
+
+  private processCommissionTimeouts(room: RoomState) {
+    for (const guild of room.guilds) {
+      const activeCommissions = guild.commissions.filter(c => c.status === 'accepted');
+      for (const commission of activeCommissions) {
+        if (!commission.batchId) continue;
+
+        let batch: Batch | undefined;
+        for (const p of room.players) {
+          const b = p.batches.find(b => b.id === commission.batchId);
+          if (b) { batch = b; break; }
+        }
+
+        if (batch && batch.currentStage !== commission.lastBatchStage) {
+          commission.roundsSinceLastProgress = 0;
+          commission.lastBatchStage = batch.currentStage;
+        } else {
+          commission.roundsSinceLastProgress += 1;
+        }
+
+        if (commission.roundsSinceLastProgress >= 3) {
+          if (batch) {
+            for (const p of room.players) {
+              const bIdx = p.batches.findIndex(b => b.id === commission.batchId);
+              if (bIdx >= 0) {
+                p.batches.splice(bIdx, 1);
+                break;
+              }
+            }
+          }
+          this.returnCommissionIngredients(room, commission);
+          commission.status = 'timed_out';
+        }
+      }
+    }
+  }
+
+  private returnCommissionIngredients(room: RoomState, commission: Commission) {
+    const requester = room.players.find(p => p.id === commission.requesterId);
+    if (!requester) return;
+    for (const ci of commission.ingredients) {
+      const existing = requester.ingredients.find(x => x.ingredientId === ci.ingredientId);
+      if (existing) {
+        existing.quantity += ci.quantity;
+      } else {
+        requester.ingredients.push({ ingredientId: ci.ingredientId, quantity: ci.quantity });
+      }
+    }
+  }
+
+  private cancelAllCommissions(room: RoomState, guild: Guild) {
+    for (const commission of guild.commissions) {
+      if (commission.status === 'pending' || commission.status === 'accepted') {
+        if (commission.status === 'accepted' && commission.batchId) {
+          for (const p of room.players) {
+            const bIdx = p.batches.findIndex(b => b.id === commission.batchId);
+            if (bIdx >= 0) {
+              p.batches.splice(bIdx, 1);
+              break;
+            }
+          }
+        }
+        this.returnCommissionIngredients(room, commission);
+        commission.status = 'cancelled';
+      }
+    }
+  }
+
+  private cleanupCommissionsForPlayer(room: RoomState, guild: Guild, playerId: string) {
+    for (const commission of guild.commissions) {
+      if (commission.status !== 'pending' && commission.status !== 'accepted') continue;
+      if (commission.requesterId === playerId || commission.brewerId === playerId) {
+        if (commission.status === 'accepted' && commission.batchId) {
+          for (const p of room.players) {
+            const bIdx = p.batches.findIndex(b => b.id === commission.batchId);
+            if (bIdx >= 0) {
+              p.batches.splice(bIdx, 1);
+              break;
+            }
+          }
+        }
+        if (commission.requesterId === playerId) {
+          this.returnCommissionIngredients(room, commission);
+        }
+        commission.status = 'cancelled';
+      }
+    }
+  }
+
+  private cleanupGuildBarrelAssignments(room: RoomState, guild: Guild, playerId: string) {
+    const player = room.players.find(p => p.id === playerId);
+    if (!player) return;
+    for (const batch of player.batches) {
+      if (batch.barrelId && guild.barrels.some(b => b.id === batch.barrelId)) {
+        batch.barrelId = undefined;
+      }
+    }
+  }
+
+  private handlePlayerLeaveGuild(room: RoomState, playerId: string) {
+    const guild = room.guilds.find(g => g.memberIds.includes(playerId));
+    if (!guild) return;
+
+    if (guild.leaderId === playerId) {
+      if (guild.memberIds.length === 1) {
+        this.cancelAllCommissions(room, guild);
+        room.guilds = room.guilds.filter(g => g.id !== guild.id);
+      } else {
+        guild.memberIds = guild.memberIds.filter(id => id !== playerId);
+        guild.leaderId = guild.memberIds[0];
+        this.cleanupCommissionsForPlayer(room, guild, playerId);
+        this.cleanupGuildBarrelAssignments(room, guild, playerId);
+      }
+    } else {
+      guild.memberIds = guild.memberIds.filter(id => id !== playerId);
+      this.cleanupCommissionsForPlayer(room, guild, playerId);
+      this.cleanupGuildBarrelAssignments(room, guild, playerId);
+    }
   }
 
   getPlayerRoomIds(): { roomId: string; playerId: string; name: string }[] {

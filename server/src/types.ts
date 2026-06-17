@@ -60,6 +60,7 @@ export interface Batch {
   createdAt: number;
   isBottled: boolean;
   score?: number;
+  commissionId?: string;
 }
 
 export interface Equipment {
@@ -121,6 +122,7 @@ export interface RoomState {
   chatMessages: ChatMessage[];
   tradeListings: TradeListing[];
   competitionWineIds: string[];
+  guilds: Guild[];
 }
 
 export interface ChatMessage {
@@ -147,6 +149,44 @@ export interface CompetitionResult {
 }
 
 export type TradeItemType = 'ingredient' | 'wine';
+
+export interface GuildApplication {
+  playerId: string;
+  playerName: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: number;
+}
+
+export type CommissionStatus = 'pending' | 'accepted' | 'completed' | 'cancelled' | 'timed_out';
+
+export interface Commission {
+  id: string;
+  requesterId: string;
+  requesterName: string;
+  brewerId: string;
+  brewerName: string;
+  ingredients: { ingredientId: string; quantity: number }[];
+  route: WineRoute;
+  name: string;
+  params: Record<string, number>;
+  quantity: number;
+  batchId?: string;
+  status: CommissionStatus;
+  roundsSinceLastProgress: number;
+  lastBatchStage: string;
+  createdAt: number;
+}
+
+export interface Guild {
+  id: string;
+  name: string;
+  motto: string;
+  leaderId: string;
+  memberIds: string[];
+  barrels: Barrel[];
+  applications: GuildApplication[];
+  commissions: Commission[];
+}
 
 export interface TradeListing {
   id: string;
@@ -188,7 +228,16 @@ export type WebSocketMessage =
   | { type: 'REQUEST_STATE'; roomId: string; playerId: string }
   | { type: 'CREATE_TRADE_LISTING'; roomId: string; playerId: string; itemType: TradeItemType; itemId: string; quantity: number; unitPrice: number }
   | { type: 'CANCEL_TRADE_LISTING'; roomId: string; playerId: string; listingId: string }
-  | { type: 'BUY_TRADE_LISTING'; roomId: string; playerId: string; listingId: string };
+  | { type: 'BUY_TRADE_LISTING'; roomId: string; playerId: string; listingId: string }
+  | { type: 'CREATE_GUILD'; roomId: string; playerId: string; name: string; motto: string }
+  | { type: 'APPLY_GUILD'; roomId: string; playerId: string; guildId: string }
+  | { type: 'APPROVE_GUILD_APPLICATION'; roomId: string; playerId: string; guildId: string; applicantId: string }
+  | { type: 'KICK_GUILD_MEMBER'; roomId: string; playerId: string; memberId: string }
+  | { type: 'LEAVE_GUILD'; roomId: string; playerId: string }
+  | { type: 'DONATE_BARREL_TO_GUILD'; roomId: string; playerId: string; barrelId: string }
+  | { type: 'CREATE_COMMISSION'; roomId: string; playerId: string; brewerId: string; ingredients: { ingredientId: string; quantity: number }[]; route: WineRoute; name: string; params: Record<string, number>; quantity: number }
+  | { type: 'ACCEPT_COMMISSION'; roomId: string; playerId: string; commissionId: string }
+  | { type: 'CANCEL_COMMISSION'; roomId: string; playerId: string; commissionId: string };
 
 export type ServerMessage =
   | { type: 'ROOM_CREATED'; room: RoomState; playerId: string }

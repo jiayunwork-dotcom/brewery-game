@@ -60,6 +60,7 @@ export interface Batch {
   createdAt: number;
   isBottled: boolean;
   score?: number;
+  commissionId?: string;
 }
 
 export interface Equipment {
@@ -121,6 +122,7 @@ export interface RoomState {
   chatMessages: ChatMessage[];
   tradeListings: TradeListing[];
   competitionWineIds: string[];
+  guilds: Guild[];
 }
 
 export interface ChatMessage {
@@ -147,6 +149,44 @@ export interface CompetitionResult {
 }
 
 export type TradeItemType = 'ingredient' | 'wine';
+
+export interface GuildApplication {
+  playerId: string;
+  playerName: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: number;
+}
+
+export type CommissionStatus = 'pending' | 'accepted' | 'completed' | 'cancelled' | 'timed_out';
+
+export interface Commission {
+  id: string;
+  requesterId: string;
+  requesterName: string;
+  brewerId: string;
+  brewerName: string;
+  ingredients: { ingredientId: string; quantity: number }[];
+  route: WineRoute;
+  name: string;
+  params: Record<string, number>;
+  quantity: number;
+  batchId?: string;
+  status: CommissionStatus;
+  roundsSinceLastProgress: number;
+  lastBatchStage: string;
+  createdAt: number;
+}
+
+export interface Guild {
+  id: string;
+  name: string;
+  motto: string;
+  leaderId: string;
+  memberIds: string[];
+  barrels: Barrel[];
+  applications: GuildApplication[];
+  commissions: Commission[];
+}
 
 export interface TradeListing {
   id: string;
@@ -224,6 +264,14 @@ export const BARREL_NAMES: Record<BarrelType, string> = {
   american_oak: '美国橡木桶',
   sherry: '雪莉桶',
   bourbon: '波本桶'
+};
+
+export const COMMISSION_STATUS_NAMES: Record<CommissionStatus, string> = {
+  pending: '待接受',
+  accepted: '酿造中',
+  completed: '已完成',
+  cancelled: '已取消',
+  timed_out: '已超时'
 };
 
 export const STAGE_NAMES: Record<string, Record<string, string>> = {

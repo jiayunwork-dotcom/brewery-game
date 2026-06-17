@@ -203,6 +203,87 @@ wss.on('connection', (ws) => {
         break;
       }
 
+      case 'CREATE_GUILD': {
+        if (msg.playerId !== clientPlayerId) return;
+        const ok = roomManager.createGuild(msg.roomId, msg.playerId, msg.name, msg.motto);
+        if (!ok) {
+          sendToClient(ws, { type: 'ERROR', message: '创建协会失败：金币不足(需500)、名称无效或已加入协会' });
+        }
+        break;
+      }
+
+      case 'APPLY_GUILD': {
+        if (msg.playerId !== clientPlayerId) return;
+        const ok = roomManager.applyToGuild(msg.roomId, msg.playerId, msg.guildId);
+        if (!ok) {
+          sendToClient(ws, { type: 'ERROR', message: '申请失败：已加入协会或协会已满' });
+        }
+        break;
+      }
+
+      case 'APPROVE_GUILD_APPLICATION': {
+        if (msg.playerId !== clientPlayerId) return;
+        const ok = roomManager.approveGuildApplication(msg.roomId, msg.playerId, msg.guildId, msg.applicantId);
+        if (!ok) {
+          sendToClient(ws, { type: 'ERROR', message: '审批失败：仅会长可操作或协会已满' });
+        }
+        break;
+      }
+
+      case 'KICK_GUILD_MEMBER': {
+        if (msg.playerId !== clientPlayerId) return;
+        const ok = roomManager.kickGuildMember(msg.roomId, msg.playerId, msg.memberId);
+        if (!ok) {
+          sendToClient(ws, { type: 'ERROR', message: '踢人失败：仅会长可操作' });
+        }
+        break;
+      }
+
+      case 'LEAVE_GUILD': {
+        if (msg.playerId !== clientPlayerId) return;
+        const ok = roomManager.leaveGuild(msg.roomId, msg.playerId);
+        if (!ok) {
+          sendToClient(ws, { type: 'ERROR', message: '退出协会失败' });
+        }
+        break;
+      }
+
+      case 'DONATE_BARREL_TO_GUILD': {
+        if (msg.playerId !== clientPlayerId) return;
+        const ok = roomManager.donateBarrelToGuild(msg.roomId, msg.playerId, msg.barrelId);
+        if (!ok) {
+          sendToClient(ws, { type: 'ERROR', message: '捐赠失败：仅会长可捐赠、桶库已满或桶正在使用' });
+        }
+        break;
+      }
+
+      case 'CREATE_COMMISSION': {
+        if (msg.playerId !== clientPlayerId) return;
+        const ok = roomManager.createCommission(msg.roomId, msg.playerId, msg.brewerId, msg.ingredients, msg.route, msg.name, msg.params, msg.quantity);
+        if (!ok) {
+          sendToClient(ws, { type: 'ERROR', message: '创建委托失败：检查原料、目标成员和协会关系' });
+        }
+        break;
+      }
+
+      case 'ACCEPT_COMMISSION': {
+        if (msg.playerId !== clientPlayerId) return;
+        const ok = roomManager.acceptCommission(msg.roomId, msg.playerId, msg.commissionId);
+        if (!ok) {
+          sendToClient(ws, { type: 'ERROR', message: '接受委托失败：需在酿造阶段操作' });
+        }
+        break;
+      }
+
+      case 'CANCEL_COMMISSION': {
+        if (msg.playerId !== clientPlayerId) return;
+        const ok = roomManager.cancelCommission(msg.roomId, msg.playerId, msg.commissionId);
+        if (!ok) {
+          sendToClient(ws, { type: 'ERROR', message: '取消委托失败：仅委托方可操作' });
+        }
+        break;
+      }
+
       default:
         sendToClient(ws, { type: 'ERROR', message: '未知消息类型' });
     }

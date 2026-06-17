@@ -350,6 +350,17 @@
           </div>
         </div>
 
+        <div class="card">
+          <div class="card-header">
+            <span>🏰 协会</span>
+          </div>
+          <div class="text-center">
+            <button class="btn btn-primary w-full" @click="showGuildPanel = true">
+              {{ myGuildInfo ? '🏰 ' + myGuildInfo.name : '➕ 查看协会' }}
+            </button>
+          </div>
+        </div>
+
         <div class="card flex-1 flex flex-col overflow-hidden">
           <div class="card-header">
             <span>💬 房间聊天</span>
@@ -418,6 +429,7 @@
       v-if="showAssignBarrel && selectedBatch"
       :batch="selectedBatch"
       :barrels="gameStore.currentPlayer.barrels"
+      :guild-barrels-list="myGuildBarrels"
       @close="showAssignBarrel = false"
       @assign="assignBarrel"
     />
@@ -433,6 +445,17 @@
       :room="gameStore.room"
       @close="leaveGame"
     />
+
+    <GuildPanel
+      v-if="showGuildPanel"
+      :guilds="gameStore.room.guilds"
+      :player-id="gameStore.playerId ?? ''"
+      :players="gameStore.room.players"
+      :coins="gameStore.currentPlayer.coins"
+      :player-ingredients="gameStore.currentPlayer.ingredients"
+      :market="gameStore.room.market"
+      @close="showGuildPanel = false"
+    />
   </div>
 </template>
 
@@ -445,6 +468,7 @@ import {
   FLAVOR_LABELS, PhaseType, MarketTier, WineRoute, Ingredient
 } from '@/types';
 import type { Player, Batch, Barrel, BottledWine, FlavorProfile } from '@/types';
+import type { Guild } from '@/types';
 import FlavorRadar from '@/components/FlavorRadar.vue';
 import FlavorLineChart from '@/components/FlavorLineChart.vue';
 import MarketAuctionPanel from '@/components/MarketAuctionPanel.vue';
@@ -457,6 +481,7 @@ import BuyBarrelModal from '@/components/BuyBarrelModal.vue';
 import AssignBarrelModal from '@/components/AssignBarrelModal.vue';
 import WineDetailModal from '@/components/WineDetailModal.vue';
 import EndGameModal from '@/components/EndGameModal.vue';
+import GuildPanel from '@/components/GuildPanel.vue';
 
 const PHASE_DESCRIPTIONS: Record<PhaseType, string> = {
   idle: '等待游戏开始',
@@ -490,6 +515,7 @@ const showBuyBarrel = ref(false);
 const showAssignBarrel = ref(false);
 const showWineDetail = ref(false);
 const showPhaseBanner = ref(false);
+const showGuildPanel = ref(false);
 const currentBannerPhase = ref<PhaseType>('idle');
 
 let timerInterval: number | null = null;
@@ -514,6 +540,15 @@ const availableIngredients = computed(() => {
     }
   });
   return result;
+});
+
+const myGuildInfo = computed<Guild | null>(() => {
+  if (!gameStore.room || !gameStore.playerId) return null;
+  return gameStore.room.guilds.find(g => g.memberIds.includes(gameStore.playerId!)) || null;
+});
+
+const myGuildBarrels = computed<Barrel[]>(() => {
+  return myGuildInfo.value?.barrels || [];
 });
 
 const phaseBadgeClass = computed(() => {

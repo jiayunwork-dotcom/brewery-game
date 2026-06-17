@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import type {
   RoomState, Player, MarketTier, ChatMessage,
-  CompetitionResult, TradeItemType
+  CompetitionResult, TradeItemType, WineRoute
 } from '@/types';
 
 const WS_URL = import.meta.env.VITE_WS_URL || `ws://${window.location.hostname}:3000/ws`;
@@ -175,6 +175,51 @@ export const useGameStore = defineStore('game', () => {
     send({ type: 'BUY_TRADE_LISTING', roomId: room.value.id, playerId: playerId.value, listingId });
   }
 
+  function createGuild(name: string, motto: string) {
+    if (!room.value || !playerId.value) return;
+    send({ type: 'CREATE_GUILD', roomId: room.value.id, playerId: playerId.value, name, motto });
+  }
+
+  function applyGuild(guildId: string) {
+    if (!room.value || !playerId.value) return;
+    send({ type: 'APPLY_GUILD', roomId: room.value.id, playerId: playerId.value, guildId });
+  }
+
+  function approveGuildApplication(guildId: string, applicantId: string) {
+    if (!room.value || !playerId.value) return;
+    send({ type: 'APPROVE_GUILD_APPLICATION', roomId: room.value.id, playerId: playerId.value, guildId, applicantId });
+  }
+
+  function kickGuildMember(memberId: string) {
+    if (!room.value || !playerId.value) return;
+    send({ type: 'KICK_GUILD_MEMBER', roomId: room.value.id, playerId: playerId.value, memberId });
+  }
+
+  function leaveGuild() {
+    if (!room.value || !playerId.value) return;
+    send({ type: 'LEAVE_GUILD', roomId: room.value.id, playerId: playerId.value });
+  }
+
+  function donateBarrelToGuild(barrelId: string) {
+    if (!room.value || !playerId.value) return;
+    send({ type: 'DONATE_BARREL_TO_GUILD', roomId: room.value.id, playerId: playerId.value, barrelId });
+  }
+
+  function createCommission(brewerId: string, ingredients: { ingredientId: string; quantity: number }[], route: WineRoute, name: string, params: Record<string, number>, quantity: number) {
+    if (!room.value || !playerId.value) return;
+    send({ type: 'CREATE_COMMISSION', roomId: room.value.id, playerId: playerId.value, brewerId, ingredients, route, name, params, quantity });
+  }
+
+  function acceptCommission(commissionId: string) {
+    if (!room.value || !playerId.value) return;
+    send({ type: 'ACCEPT_COMMISSION', roomId: room.value.id, playerId: playerId.value, commissionId });
+  }
+
+  function cancelCommission(commissionId: string) {
+    if (!room.value || !playerId.value) return;
+    send({ type: 'CANCEL_COMMISSION', roomId: room.value.id, playerId: playerId.value, commissionId });
+  }
+
   function requestState() {
     if (!room.value || !playerId.value) return;
     send({ type: 'REQUEST_STATE', roomId: room.value.id, playerId: playerId.value });
@@ -212,6 +257,15 @@ export const useGameStore = defineStore('game', () => {
     createTradeListing,
     cancelTradeListing,
     buyTradeListing,
+    createGuild,
+    applyGuild,
+    approveGuildApplication,
+    kickGuildMember,
+    leaveGuild,
+    donateBarrelToGuild,
+    createCommission,
+    acceptCommission,
+    cancelCommission,
     requestState,
     getRoomList
   };

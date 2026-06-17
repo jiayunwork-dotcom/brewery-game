@@ -1,6 +1,6 @@
 import {
   FlavorProfile, Batch, WineRoute, Ingredient, Player, RoomState,
-  Barrel, BarrelType, BottledWine, Judge, CompetitionResult, GameEvent, QualityGrade
+  Barrel, BarrelType, BottledWine, Judge, CompetitionResult, GameEvent, QualityGrade, Guild
 } from './types';
 import { QUALITY_MULTIPLIER, JUDGES, BARREL_DATA, createBarrel, getInitialMarket } from './data';
 import { v4 as uuidv4 } from 'uuid';
@@ -364,7 +364,13 @@ export function updateAging(room: RoomState) {
   room.players.forEach(player => {
     player.batches.forEach(batch => {
       if (batch.barrelId) {
-        const barrel = player.barrels.find(b => b.id === batch.barrelId);
+        let barrel = player.barrels.find(b => b.id === batch.barrelId);
+        if (!barrel && room.guilds) {
+          for (const guild of room.guilds) {
+            barrel = guild.barrels.find(b => b.id === batch.barrelId);
+            if (barrel) break;
+          }
+        }
         if (barrel) {
           batch.barrelRounds += 1;
           batch.currentFlavor = applyBarrelAging(batch.currentFlavor, barrel, 1);
@@ -395,6 +401,32 @@ export function runCompetition(room: RoomState, entries: { playerId: string; win
       judgeScores
     };
   }).filter((e): e is NonNullable<typeof e> => e !== null);
+
+  if (room.guilds && room.guilds.length > 0) {
+    const guildMemberMap = new Map<string, string>();
+    for (const guild of room.guilds) {
+      for (const mid of guild.memberIds) {
+        guildMemberMap.set(mid, guild.id);
+      }
+    }
+
+    const guildEntryMap = new Map<string, typeof judgedEntries>();
+    for (const entry of judgedEntries) {
+      const gid = guildMemberMap.get(entry.playerId);
+      if (gid) {
+        if (!guildEntryMap.has(gid)) guildEntryMap.set(gid, []);
+        guildEntryMap.get(gid)!.push(entry);
+      }
+    }
+
+    for (const [, gEntries] of guildEntryMap) {
+      if (gEntries.length >= 2 && gEntries.every(e => e.score > 50)) {
+        for (const e of gEntries) {
+          e.score = Math.round(e.score * 1.05);
+        }
+      }
+    }
+  }
 
   judgedEntries.sort((a, b) => b.score - a.score);
 
