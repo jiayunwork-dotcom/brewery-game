@@ -1,5 +1,15 @@
 <template>
   <div class="game-view min-h-screen p-3" v-if="gameStore.room && gameStore.currentPlayer">
+    <transition name="fade">
+      <div v-if="showPhaseBanner" class="phase-banner">
+        <div class="phase-banner-content">
+          <div class="phase-banner-round">第 {{ gameStore.room.currentRound }} 回合</div>
+          <div class="phase-banner-name">{{ PHASE_NAMES[currentBannerPhase] }}</div>
+          <div class="phase-banner-desc">{{ PHASE_DESCRIPTIONS[currentBannerPhase] }}</div>
+        </div>
+      </div>
+    </transition>
+
     <div class="game-header mb-3 flex justify-between items-center card" style="padding: 12px 20px;">
       <div class="flex items-center gap-4">
         <div>
@@ -400,7 +410,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { useGameStore } from '@/stores/game';
 import {
@@ -419,6 +429,16 @@ import BuyBarrelModal from '@/components/BuyBarrelModal.vue';
 import AssignBarrelModal from '@/components/AssignBarrelModal.vue';
 import WineDetailModal from '@/components/WineDetailModal.vue';
 import EndGameModal from '@/components/EndGameModal.vue';
+
+const PHASE_DESCRIPTIONS: Record<PhaseType, string> = {
+  idle: '等待游戏开始',
+  market_auction: '原料市场开放，提交出价竞价抢购！',
+  brewing: '管理产线，推进酿造各阶段',
+  aging: '橡木桶中陈酿，风味静静演变',
+  sales: '成品上架销售，赚取金币与声望',
+  competition: '品酒大赛，拿出你最好的酒！',
+  events: '随机事件即将揭晓'
+};
 
 const router = useRouter();
 const gameStore = useGameStore();
@@ -440,8 +460,11 @@ const showCreateBatch = ref(false);
 const showBuyBarrel = ref(false);
 const showAssignBarrel = ref(false);
 const showWineDetail = ref(false);
+const showPhaseBanner = ref(false);
+const currentBannerPhase = ref<PhaseType>('idle');
 
 let timerInterval: number | null = null;
+let bannerTimer: number | null = null;
 
 const sortedPlayers = computed(() => {
   if (!gameStore.room) return [];
@@ -572,7 +595,18 @@ function leaveGame() {
   router.push('/');
 }
 
-watch(() => gameStore.room?.currentPhase, (newPhase) => {
+watch(() => gameStore.room?.currentPhase, (newPhase, oldPhase) => {
+  if (newPhase && newPhase !== oldPhase) {
+    currentBannerPhase.value = newPhase;
+    showPhaseBanner.value = false;
+    nextTick(() => {
+      showPhaseBanner.value = true;
+      if (bannerTimer) clearTimeout(bannerTimer);
+      bannerTimer = window.setTimeout(() => {
+        showPhaseBanner.value = false;
+      }, 2500);
+    });
+  }
   if (newPhase === 'market_auction') {
     activeTab.value = 'market';
     myBids.value = [];
@@ -601,6 +635,60 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.phase-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.75);
+  pointer-events: none;
+}
+
+.phase-banner-content {
+  text-align: center;
+  padding: 50px 80px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(139, 69, 19, 0.95), rgba(80, 40, 15, 0.95));
+  border: 2px solid #d4a574;
+  box-shadow: 0 0 60px rgba(212, 165, 116, 0.4);
+}
+
+.phase-banner-round {
+  font-size: 16px;
+  color: #888;
+  margin-bottom: 12px;
+  letter-spacing: 3px;
+}
+
+.phase-banner-name {
+  font-size: 48px;
+  font-weight: bold;
+  color: #d4a574;
+  margin-bottom: 16px;
+  text-shadow: 0 0 20px rgba(212, 165, 116, 0.5);
+}
+
+.phase-banner-desc {
+  font-size: 18px;
+  color: #c9b896;
+  letter-spacing: 1px;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.4s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
 .batch-selected {
   border-color: #8b4513 !important;
   background: rgba(139, 69, 19, 0.15) !important;

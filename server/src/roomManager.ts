@@ -319,9 +319,26 @@ export class RoomManager {
     switch (phase) {
       case 'market_auction':
         room.market = getInitialMarket();
+        room.auctionBids = [];
         break;
       case 'brewing':
         const purchases = runAuction(room);
+        if (purchases.length > 0) {
+          purchases.forEach(p => {
+            const player = room.players.find(pl => pl.id === p.playerId);
+            const ing = room.market.find(i => i.id === p.ingredientId);
+            if (player && ing) {
+              const ev = {
+                id: uuidv4(),
+                round: room.currentRound,
+                playerId: p.playerId,
+                message: `[拍卖] ${player.name} 购入 ${ing.name} x${p.quantity}，花费 ¥${p.cost}`
+              };
+              room.events.push(ev as any);
+            }
+          });
+        }
+        room.auctionBids = [];
         this.broadcast(room.id, { type: 'AUCTION_RESULT', room, purchases });
         break;
       case 'aging':

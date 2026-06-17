@@ -69,10 +69,11 @@ export const useGameStore = defineStore('game', () => {
   function handleMessage(event: MessageEvent) {
     try {
       const msg: any = JSON.parse(event.data);
+      const deepClone = (obj: any) => obj ? JSON.parse(JSON.stringify(obj)) : obj;
       switch (msg.type) {
         case 'ROOM_CREATED':
         case 'ROOM_JOINED':
-          room.value = msg.room;
+          room.value = deepClone(msg.room);
           playerId.value = msg.playerId;
           break;
         case 'PLAYER_JOINED':
@@ -83,7 +84,7 @@ export const useGameStore = defineStore('game', () => {
         case 'STATE_UPDATED':
         case 'AUCTION_RESULT':
         case 'SALES_RESULT':
-          room.value = msg.room;
+          room.value = deepClone(msg.room);
           break;
         case 'CHAT_MESSAGE':
           if (room.value) {
@@ -92,8 +93,8 @@ export const useGameStore = defineStore('game', () => {
           }
           break;
         case 'COMPETITION_RESULT':
-          room.value = msg.room;
-          lastCompetition.value = msg.result;
+          room.value = deepClone(msg.room);
+          lastCompetition.value = deepClone(msg.result);
           break;
         case 'ERROR':
           errorMsg.value = msg.message;

@@ -109,15 +109,19 @@ export const QUALITY_PRICE_MULTIPLIER: Record<QualityGrade, number> = {
 
 export function getInitialMarket(): Ingredient[] {
   const ingredients: Ingredient[] = [];
-  let idCounter = 0;
 
-  const qualities: QualityGrade[] = ['normal', 'normal', 'normal', 'premium', 'premium', 'top'];
+  const qualities: QualityGrade[] = ['normal', 'premium', 'top'];
+  const quantityByQuality: Record<QualityGrade, number> = {
+    normal: 100,
+    premium: 50,
+    top: 20
+  };
 
   (Object.keys(GRAPE_DATA) as GrapeVariety[]).forEach(variety => {
     qualities.forEach(quality => {
       const data = GRAPE_DATA[variety];
       ingredients.push({
-        id: `grape_${variety}_${quality}_${idCounter++}`,
+        id: `grape_${variety}_${quality}`,
         name: `${data.name} (${quality === 'top' ? '顶级' : quality === 'premium' ? '优质' : '普通'})`,
         type: 'grape',
         variety,
@@ -125,7 +129,7 @@ export function getInitialMarket(): Ingredient[] {
         baseFlavor: data.baseFlavor,
         basePrice: Math.floor(data.basePrice * QUALITY_PRICE_MULTIPLIER[quality]),
         currentPrice: Math.floor(data.basePrice * QUALITY_PRICE_MULTIPLIER[quality]),
-        quantity: quality === 'top' ? 20 : quality === 'premium' ? 50 : 100,
+        quantity: quantityByQuality[quality],
         purchased: 0
       });
     });
@@ -135,7 +139,7 @@ export function getInitialMarket(): Ingredient[] {
     qualities.forEach(quality => {
       const data = MALT_DATA[variety];
       ingredients.push({
-        id: `malt_${variety}_${quality}_${idCounter++}`,
+        id: `malt_${variety}_${quality}`,
         name: `${data.name} (${quality === 'top' ? '顶级' : quality === 'premium' ? '优质' : '普通'})`,
         type: 'malt',
         variety,
@@ -143,7 +147,7 @@ export function getInitialMarket(): Ingredient[] {
         baseFlavor: data.baseFlavor,
         basePrice: Math.floor(data.basePrice * QUALITY_PRICE_MULTIPLIER[quality]),
         currentPrice: Math.floor(data.basePrice * QUALITY_PRICE_MULTIPLIER[quality]),
-        quantity: quality === 'top' ? 20 : quality === 'premium' ? 50 : 100,
+        quantity: quantityByQuality[quality],
         purchased: 0
       });
     });
@@ -153,7 +157,7 @@ export function getInitialMarket(): Ingredient[] {
     qualities.forEach(quality => {
       const data = HOP_DATA[variety];
       ingredients.push({
-        id: `hop_${variety}_${quality}_${idCounter++}`,
+        id: `hop_${variety}_${quality}`,
         name: `${data.name} (${quality === 'top' ? '顶级' : quality === 'premium' ? '优质' : '普通'})`,
         type: 'hop',
         variety,
@@ -168,26 +172,27 @@ export function getInitialMarket(): Ingredient[] {
   });
 
   (Object.keys(YEAST_DATA) as YeastStrain[]).forEach(variety => {
-    qualities.slice(0, 4).forEach(quality => {
+    ['normal', 'premium'].forEach(q => {
+      const quality = q as QualityGrade;
       const data = YEAST_DATA[variety];
       ingredients.push({
-        id: `yeast_${variety}_${quality}_${idCounter++}`,
-        name: `${data.name} (${quality === 'top' ? '顶级' : quality === 'premium' ? '优质' : '普通'})`,
+        id: `yeast_${variety}_${quality}`,
+        name: `${data.name} (${quality === 'premium' ? '优质' : '普通'})`,
         type: 'yeast',
         variety,
         quality,
         baseFlavor: data.baseFlavor,
         basePrice: Math.floor(data.basePrice * QUALITY_PRICE_MULTIPLIER[quality]),
         currentPrice: Math.floor(data.basePrice * QUALITY_PRICE_MULTIPLIER[quality]),
-        quantity: quality === 'top' ? 10 : quality === 'premium' ? 30 : 60,
+        quantity: quality === 'premium' ? 30 : 60,
         purchased: 0
       });
     });
   });
 
-  qualities.slice(0, 5).forEach(quality => {
+  qualities.forEach(quality => {
     ingredients.push({
-      id: `barley_${quality}_${idCounter++}`,
+      id: `barley_${quality}`,
       name: `大麦 (${quality === 'top' ? '顶级' : quality === 'premium' ? '优质' : '普通'})`,
       type: 'barley',
       quality,
