@@ -1,6 +1,7 @@
 import {
   RoomState, Player, WebSocketMessage, ServerMessage,
-  PhaseType, MarketTier, Ingredient, Batch, BottledWine, Equipment
+  PhaseType, MarketTier, Ingredient, Batch, BottledWine, Equipment,
+  TradeListing, TradeItemType, QualityGrade, WineRoute
 } from './types';
 import { getInitialMarket, createBarrel, BARREL_DATA } from './data';
 import {
@@ -47,7 +48,9 @@ export class RoomManager {
       auctionBids: [],
       gameStarted: false,
       gameEnded: false,
-      chatMessages: []
+      chatMessages: [],
+      tradeListings: [],
+      competitionWineIds: []
     };
 
     this.rooms.set(roomId, room);
@@ -303,6 +306,9 @@ export class RoomManager {
     if (!(room as any).competitionEntries) (room as any).competitionEntries = [];
     (room as any).competitionEntries = (room as any).competitionEntries.filter((e: any) => e.playerId !== playerId);
     (room as any).competitionEntries.push({ playerId, wineId });
+    if (!room.competitionWineIds.includes(wineId)) {
+      room.competitionWineIds.push(wineId);
+    }
   }
 
   phaseTimeout(roomId: string) {
@@ -457,6 +463,184 @@ export class RoomManager {
       competitionWins: 0,
       totalAssets: 2000
     };
+  }
+
+  createTradeListing(roomId: string, playerId: string, itemType: TradeItemType, itemId: string, quantity: number, unitPrice: number): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room || room.currentPhase !== 'sales') return false;
+    const player = room.players.find(p => p.id === playerId);
+    if (!player) return false;
+
+    const pendingListings = room.tradeListings.filter(l => l.sellerId === playerId && l.status === 'pending');
+    if (pendingListings.length >= 5) return false;
+
+    if (quantity <= 0 || unitPrice <= 0) return false;
+
+    let itemName = '';
+    let itemRoute: WineRoute | undefined;
+    let itemScore: number | undefined;
+    let quality: QualityGrade | undefined;
+
+    if (itemType === 'ingredient') {
+      const pi = player.ingredients.find(x => x.ingredientId === itemId);
+      const mi = room.market.find(x => x.id === itemId);
+      if (!pi || !mi || pi.quantity < quantity) return false;
+      pi.quantity -= quantity;
+      itemName = mi.name;
+      quality = mi.quality;
+    } else if (itemType === 'wine') {
+      if (room.competitionWineIds.includes(itemId)) return false;
+      const wine = player.inventory.find(w => w.id === itemId);
+      if (!wine || wine.quantity < quantity) return false;
+      wine.quantity -= quantity;
+      if (wine.quantity <= 0) {
+        player.inventory = player.inventory.filter(w => w.id !== itemId);
+      }
+      itemName = wine.name;
+      itemRoute = wine.route;
+      itemScore = wine.score;
+    } else {
+      return false;
+    }
+
+    const listing: TradeListing = {
+      id: `trade_${uuidv4()}`,
+      sellerId: playerId,
+      sellerName: player.name,
+      itemType,
+      itemId,
+      itemName,
+      itemRoute,
+      itemScore,
+      quality,
+      quantity,
+      unitPrice,
+      status: 'pending',
+      createdAt: Date.now()
+    };
+
+    room.tradeListings.push(listing);
+    this.updateAssets(room);
+    this.broadcast(roomId, { type: 'STATE_UPDATED', room });
+    return true;
+  }
+
+  cancelTradeListing(roomId: string, playerId: string, listingId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room || room.currentPhase !== 'sales') return false;
+    const listing = room.tradeListings.find(l => l.id === listingId);
+    if (!listing || listing.sellerId !== playerId || listing.status !== 'pending') return false;
+
+    const player = room.players.find(p => p.id === playerId);
+    if (!player) return false;
+
+    if (listing.itemType === 'ingredient') {
+      const existing = player.ingredients.find(x => x.ingredientId === listing.itemId);
+      if (existing) {
+        existing.quantity += listing.quantity;
+      } else {
+        player.ingredients.push({ ingredientId: listing.itemId, quantity: listing.quantity });
+      }
+    } else if (listing.itemType === 'wine') {
+      const existing = player.inventory.find(w => w.id === listing.itemId);
+      if (existing) {
+        existing.quantity += listing.quantity;
+      } else {
+        const mi = room.market.find(m => m.id === listing.itemId);
+        player.inventory.push({
+          id: listing.itemId,
+          batchId: '',
+          route: listing.itemRoute || 'wine',
+          name: listing.itemName,
+          flavor: { acidity: 0, sweetness: 0, bitterness: 0, fruitiness: 0, floral: 0, woody: 0, body: 0, finish: 0 },
+          score: listing.itemScore || 0,
+          quantity: listing.quantity,
+          ageRounds: 0
+        });
+      }
+    }
+
+    listing.status = 'cancelled';
+    this.updateAssets(room);
+    this.broadcast(roomId, { type: 'STATE_UPDATED', room });
+    return true;
+  }
+
+  buyTradeListing(roomId: string, playerId: string, listingId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room || room.currentPhase !== 'sales') return false;
+    const listing = room.tradeListings.find(l => l.id === listingId);
+    if (!listing || listing.status !== 'pending') return false;
+    if (listing.sellerId === playerId) return false;
+
+    const buyer = room.players.find(p => p.id === playerId);
+    const seller = room.players.find(p => p.id === listing.sellerId);
+    if (!buyer || !seller) return false;
+
+    const totalCost = listing.quantity * listing.unitPrice;
+    if (buyer.coins < totalCost) return false;
+
+    buyer.coins -= totalCost;
+    seller.coins += totalCost;
+
+    if (listing.itemType === 'ingredient') {
+      const existing = buyer.ingredients.find(x => x.ingredientId === listing.itemId);
+      if (existing) {
+        existing.quantity += listing.quantity;
+      } else {
+        buyer.ingredients.push({ ingredientId: listing.itemId, quantity: listing.quantity });
+      }
+    } else if (listing.itemType === 'wine') {
+      const existing = buyer.inventory.find(w => w.id === listing.itemId);
+      if (existing) {
+        existing.quantity += listing.quantity;
+      } else {
+        const sellerWine = seller.inventory.find(w => w.id === listing.itemId);
+        if (sellerWine) {
+          buyer.inventory.push({
+            ...sellerWine,
+            quantity: listing.quantity
+          });
+        } else {
+          buyer.inventory.push({
+            id: listing.itemId,
+            batchId: '',
+            route: listing.itemRoute || 'wine',
+            name: listing.itemName,
+            flavor: { acidity: 0, sweetness: 0, bitterness: 0, fruitiness: 0, floral: 0, woody: 0, body: 0, finish: 0 },
+            score: listing.itemScore || 0,
+            quantity: listing.quantity,
+            ageRounds: 0
+          });
+        }
+      }
+    }
+
+    listing.status = 'sold';
+
+    const tradeEvent1 = {
+      id: uuidv4(),
+      round: room.currentRound,
+      type: 'trade' as const,
+      message: `[交易] 你卖出「${listing.itemName}」x${listing.quantity}，获得 ¥${totalCost}`,
+      affectedPlayerIds: [seller.id],
+      effect: { coins: totalCost }
+    };
+    room.events.push(tradeEvent1 as any);
+
+    const tradeEvent2 = {
+      id: uuidv4(),
+      round: room.currentRound,
+      type: 'trade' as const,
+      message: `[交易] 你从 ${seller.name} 购买「${listing.itemName}」x${listing.quantity}，花费 ¥${totalCost}`,
+      affectedPlayerIds: [buyer.id],
+      effect: { coins: -totalCost }
+    };
+    room.events.push(tradeEvent2 as any);
+
+    this.updateAssets(room);
+    this.broadcast(roomId, { type: 'STATE_UPDATED', room });
+    return true;
   }
 
   getRoom(roomId: string): RoomState | undefined {

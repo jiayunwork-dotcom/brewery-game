@@ -237,12 +237,39 @@
           </div>
 
           <div v-else-if="activeTab === 'sales'">
+            <div class="flex gap-2 p-2 pb-0">
+              <button
+                class="btn btn-small"
+                :class="salesSubTab === 'npc' ? 'btn-primary' : 'btn-secondary'"
+                @click="salesSubTab = 'npc'"
+              >💰 NPC 市场</button>
+              <button
+                class="btn btn-small"
+                :class="salesSubTab === 'trade' ? 'btn-primary' : 'btn-secondary'"
+                @click="salesSubTab = 'trade'"
+              >🤝 玩家交易</button>
+            </div>
             <SalesPanel
+              v-show="salesSubTab === 'npc'"
               :inventory="gameStore.currentPlayer.inventory"
               :phase="gameStore.room.currentPhase"
               :reputation="gameStore.currentPlayer.reputation"
               :market-trend="gameStore.room.marketTrend"
               @list="handleListSale"
+            />
+            <TradePanel
+              v-show="salesSubTab === 'trade'"
+              :phase="gameStore.room.currentPhase"
+              :coins="gameStore.currentPlayer.coins"
+              :player-id="gameStore.playerId ?? undefined"
+              :trade-listings="gameStore.room.tradeListings"
+              :player-ingredients="gameStore.currentPlayer.ingredients"
+              :player-inventory="gameStore.currentPlayer.inventory"
+              :market-ingredients="gameStore.room.market"
+              :competition-wine-ids="gameStore.room.competitionWineIds"
+              @create="handleCreateTrade"
+              @cancel="handleCancelTrade"
+              @buy="handleBuyTrade"
             />
           </div>
 
@@ -424,6 +451,7 @@ import MarketAuctionPanel from '@/components/MarketAuctionPanel.vue';
 import SalesPanel from '@/components/SalesPanel.vue';
 import CompetitionPanel from '@/components/CompetitionPanel.vue';
 import EquipmentShop from '@/components/EquipmentShop.vue';
+import TradePanel from '@/components/TradePanel.vue';
 import CreateBatchModal from '@/components/CreateBatchModal.vue';
 import BuyBarrelModal from '@/components/BuyBarrelModal.vue';
 import AssignBarrelModal from '@/components/AssignBarrelModal.vue';
@@ -452,6 +480,7 @@ const tabs = [
 ];
 
 const activeTab = ref<typeof tabs[number]['key']>('market');
+const salesSubTab = ref<'npc' | 'trade'>('npc');
 const selectedBatch = ref<Batch | null>(null);
 const selectedWine = ref<BottledWine | null>(null);
 const myBids = ref<{ ingredientId: string; bid: number; quantity: number }[]>([]);
@@ -582,6 +611,18 @@ function createBatch(data: { route: WineRoute; name: string; ingredientIds: stri
 
 function handleListSale(listings: { wineId: string; tier: MarketTier; price: number }[]) {
   gameStore.listForSale(listings);
+}
+
+function handleCreateTrade(itemType: any, itemId: string, quantity: number, unitPrice: number) {
+  gameStore.createTradeListing(itemType, itemId, quantity, unitPrice);
+}
+
+function handleCancelTrade(listingId: string) {
+  gameStore.cancelTradeListing(listingId);
+}
+
+function handleBuyTrade(listingId: string) {
+  gameStore.buyTradeListing(listingId);
 }
 
 function sendChat() {

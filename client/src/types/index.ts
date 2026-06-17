@@ -119,6 +119,8 @@ export interface RoomState {
   gameEnded: boolean;
   winner?: Player;
   chatMessages: ChatMessage[];
+  tradeListings: TradeListing[];
+  competitionWineIds: string[];
 }
 
 export interface ChatMessage {
@@ -132,7 +134,7 @@ export interface ChatMessage {
 export interface GameEvent {
   id: string;
   round: number;
-  type: 'accident' | 'harvest' | 'celebrity' | 'market_boom' | 'market_crash';
+  type: 'accident' | 'harvest' | 'celebrity' | 'market_boom' | 'market_crash' | 'trade';
   message: string;
   affectedPlayerIds?: string[];
   effect: Record<string, unknown>;
@@ -142,6 +144,24 @@ export interface CompetitionResult {
   round: number;
   entries: { playerId: string; wineId: string; score: number; judgeScores: number[] }[];
   winners: { playerId: string; rank: number; reputationReward: number; coinReward: number }[];
+}
+
+export type TradeItemType = 'ingredient' | 'wine';
+
+export interface TradeListing {
+  id: string;
+  sellerId: string;
+  sellerName: string;
+  itemType: TradeItemType;
+  itemId: string;
+  itemName: string;
+  itemRoute?: WineRoute;
+  itemScore?: number;
+  quality?: QualityGrade;
+  quantity: number;
+  unitPrice: number;
+  status: 'pending' | 'sold' | 'cancelled';
+  createdAt: number;
 }
 
 export interface RoomInfo {

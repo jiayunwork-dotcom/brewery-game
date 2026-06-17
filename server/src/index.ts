@@ -176,6 +176,33 @@ wss.on('connection', (ws) => {
         break;
       }
 
+      case 'CREATE_TRADE_LISTING': {
+        if (msg.playerId !== clientPlayerId) return;
+        const ok = roomManager.createTradeListing(msg.roomId, msg.playerId, msg.itemType, msg.itemId, msg.quantity, msg.unitPrice);
+        if (!ok) {
+          sendToClient(ws, { type: 'ERROR', message: '挂单失败：检查阶段、数量、价格或是否超过5件上限' });
+        }
+        break;
+      }
+
+      case 'CANCEL_TRADE_LISTING': {
+        if (msg.playerId !== clientPlayerId) return;
+        const ok = roomManager.cancelTradeListing(msg.roomId, msg.playerId, msg.listingId);
+        if (!ok) {
+          sendToClient(ws, { type: 'ERROR', message: '撤单失败' });
+        }
+        break;
+      }
+
+      case 'BUY_TRADE_LISTING': {
+        if (msg.playerId !== clientPlayerId) return;
+        const ok = roomManager.buyTradeListing(msg.roomId, msg.playerId, msg.listingId);
+        if (!ok) {
+          sendToClient(ws, { type: 'ERROR', message: '购买失败：检查金币或商品状态' });
+        }
+        break;
+      }
+
       default:
         sendToClient(ws, { type: 'ERROR', message: '未知消息类型' });
     }

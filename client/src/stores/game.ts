@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import type {
   RoomState, Player, MarketTier, ChatMessage,
-  CompetitionResult
+  CompetitionResult, TradeItemType
 } from '@/types';
 
 const WS_URL = import.meta.env.VITE_WS_URL || `ws://${window.location.hostname}:3000/ws`;
@@ -160,6 +160,21 @@ export const useGameStore = defineStore('game', () => {
     send({ type: 'ENTER_COMPETITION', roomId: room.value.id, playerId: playerId.value, wineId });
   }
 
+  function createTradeListing(itemType: TradeItemType, itemId: string, quantity: number, unitPrice: number) {
+    if (!room.value || !playerId.value) return;
+    send({ type: 'CREATE_TRADE_LISTING', roomId: room.value.id, playerId: playerId.value, itemType, itemId, quantity, unitPrice });
+  }
+
+  function cancelTradeListing(listingId: string) {
+    if (!room.value || !playerId.value) return;
+    send({ type: 'CANCEL_TRADE_LISTING', roomId: room.value.id, playerId: playerId.value, listingId });
+  }
+
+  function buyTradeListing(listingId: string) {
+    if (!room.value || !playerId.value) return;
+    send({ type: 'BUY_TRADE_LISTING', roomId: room.value.id, playerId: playerId.value, listingId });
+  }
+
   function requestState() {
     if (!room.value || !playerId.value) return;
     send({ type: 'REQUEST_STATE', roomId: room.value.id, playerId: playerId.value });
@@ -194,6 +209,9 @@ export const useGameStore = defineStore('game', () => {
     brewingAction,
     listForSale,
     enterCompetition,
+    createTradeListing,
+    cancelTradeListing,
+    buyTradeListing,
     requestState,
     getRoomList
   };

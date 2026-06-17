@@ -119,6 +119,8 @@ export interface RoomState {
   gameEnded: boolean;
   winner?: Player;
   chatMessages: ChatMessage[];
+  tradeListings: TradeListing[];
+  competitionWineIds: string[];
 }
 
 export interface ChatMessage {
@@ -132,7 +134,7 @@ export interface ChatMessage {
 export interface GameEvent {
   id: string;
   round: number;
-  type: 'accident' | 'harvest' | 'celebrity' | 'market_boom' | 'market_crash';
+  type: 'accident' | 'harvest' | 'celebrity' | 'market_boom' | 'market_crash' | 'trade';
   message: string;
   affectedPlayerIds?: string[];
   effect: Record<string, unknown>;
@@ -142,6 +144,24 @@ export interface CompetitionResult {
   round: number;
   entries: { playerId: string; wineId: string; score: number; judgeScores: number[] }[];
   winners: { playerId: string; rank: number; reputationReward: number; coinReward: number }[];
+}
+
+export type TradeItemType = 'ingredient' | 'wine';
+
+export interface TradeListing {
+  id: string;
+  sellerId: string;
+  sellerName: string;
+  itemType: TradeItemType;
+  itemId: string;
+  itemName: string;
+  itemRoute?: WineRoute;
+  itemScore?: number;
+  quality?: QualityGrade;
+  quantity: number;
+  unitPrice: number;
+  status: 'pending' | 'sold' | 'cancelled';
+  createdAt: number;
 }
 
 export interface Judge {
@@ -162,7 +182,10 @@ export type WebSocketMessage =
   | { type: 'LIST_FOR_SALE'; roomId: string; playerId: string; listings: { wineId: string; tier: MarketTier; price: number }[] }
   | { type: 'ENTER_COMPETITION'; roomId: string; playerId: string; wineId: string }
   | { type: 'PHASE_TIMEOUT'; roomId: string; playerId: string }
-  | { type: 'REQUEST_STATE'; roomId: string; playerId: string };
+  | { type: 'REQUEST_STATE'; roomId: string; playerId: string }
+  | { type: 'CREATE_TRADE_LISTING'; roomId: string; playerId: string; itemType: TradeItemType; itemId: string; quantity: number; unitPrice: number }
+  | { type: 'CANCEL_TRADE_LISTING'; roomId: string; playerId: string; listingId: string }
+  | { type: 'BUY_TRADE_LISTING'; roomId: string; playerId: string; listingId: string };
 
 export type ServerMessage =
   | { type: 'ROOM_CREATED'; room: RoomState; playerId: string }
